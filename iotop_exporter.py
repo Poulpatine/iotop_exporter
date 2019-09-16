@@ -1,6 +1,7 @@
 import argparse
-from logger import logging
+import re
 import time
+from logger import logging
 from psutil import Process, AccessDenied, process_iter
 from prometheus_client import start_http_server, Gauge
 
@@ -8,7 +9,7 @@ from prometheus_client import start_http_server, Gauge
 def process_request(command):
     pidlist = []
     for proc in process_iter():
-        if proc.name() == command:
+        if re.match(command, proc.name()):
             pidlist.append(proc.pid)
 
     for pid in pidlist:
@@ -16,30 +17,30 @@ def process_request(command):
         try:
             ios = process.io_counters()
             for iotype in ios._fields:
-                io_process.labels(io_type=iotype, pid=pid,
-                                  cmd=command).set(getattr(ios, iotype))
+                IO_PROCESS.labels(io_type=iotype, pid=pid,
+                                  cmd=process.name()).set(getattr(ios, iotype))
         except AccessDenied:
             logging.error("unable to access to PID %s stats" % pid)
-    return io_process
+    return IO_PROCESS
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Launch an Iotop exporter')
-    parser.add_argument('-p',
+    PARSER = argparse.ArgumentParser(description='Launch an Iotop exporter')
+    PARSER.add_argument('-p',
                         '--port',
                         type=int,
                         default=9099,
                         help='default listening port of exporter')
-    parser.add_argument('-c',
+    PARSER.add_argument('-c',
                         '--command',
                         type=str,
                         help='command to monitor')
-    args = parser.parse_args()
+    ARGS = PARSER.parse_args()
     # Start up the server to expose the metrics.
-    start_http_server(args.port)
+    start_http_server(ARGS.port)
     # Generate some requests.
-    io_process = Gauge('io_process', 'Process IO',
+    IO_PROCESS = Gauge('io_process', 'Process IO',
                        ['io_type', 'pid', 'cmd'])
     while True:
-        process_request(args.command)
+        process_request(ARGS.command)
         time.sleep(5)
